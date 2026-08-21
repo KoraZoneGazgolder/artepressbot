@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TZ=Europe/Moscow
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tzdata tesseract-ocr libglib2.0-0 \
+    && apt-get install -y --no-install-recommends tzdata tesseract-ocr ssocr libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

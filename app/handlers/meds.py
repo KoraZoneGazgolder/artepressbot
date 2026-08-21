@@ -9,7 +9,7 @@ from aiogram.types import CallbackQuery, Message
 from app.config import settings
 from app.db import db, iso, now_msk, now_utc, parse_times_list
 from app.filters import ApprovedUser
-from app.keyboards import MedCb, PillCb, meds_manage_keyboard
+from app.keyboards import MedCb, PillCb, main_keyboard, meds_manage_keyboard
 
 router = Router()
 
@@ -33,7 +33,10 @@ async def cmd_meds(message: Message, db_user: dict, state: FSMContext) -> None:
     await state.clear()
     meds = await db.list_meds(db_user["id"])
     if not meds:
-        await message.answer("Препаратов нет. Добавьте через /addmed")
+        await message.answer(
+            "Препаратов нет. Добавьте через /addmed",
+            reply_markup=main_keyboard(),
+        )
         return
     lines = ["Ваши таблетки:"]
     for med in meds:

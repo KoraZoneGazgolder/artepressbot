@@ -51,6 +51,8 @@ async def _maybe_pill_reminders(bot: Bot, user: dict, now, day: str) -> None:
     meds = await db.list_meds(user["id"])
     for med in meds:
         for hhmm in med["times"]:
+            if _added_after_todays_slot(med, hhmm, now):
+                continue
             log_row = await db.get_or_create_pill_log(user["id"], med["id"], day, hhmm)
             if log_row["status"] in {"taken", "skipped"}:
                 continue
@@ -60,7 +62,7 @@ async def _maybe_pill_reminders(bot: Bot, user: dict, now, day: str) -> None:
                 if now_utc() >= parse_iso(log_row["snooze_until"]):
                     should_send = True
             elif log_row["status"] == "pending" and not log_row.get("reminded_at"):
-                if due_within(hhmm, now, window_hours=14):
+                if due_within(hhmm, now, window_hours=2):
                     should_send = True
 
             if not should_send:
@@ -82,3 +84,13 @@ async def _maybe_pill_reminders(bot: Bot, user: dict, now, day: str) -> None:
                 reminded_at=iso(now_utc()),
                 snooze_until=None,
             )
+
+
+def _added_after_todays_slot(med: dict, hhmm: str, now) -> bool:
+    created_raw = med.get("created_at")
+    if not created_raw:
+        return False
+    created = parse_iso(created_raw).astimezone(now.tzinfo)
+    hour, minute = map(int, hhmm.split(":"))
+    scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return created > scheduled

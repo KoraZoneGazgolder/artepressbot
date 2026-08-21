@@ -43,6 +43,14 @@ def fmt_dt(value: str) -> str:
     return parse_iso(value).astimezone(MSK).strftime("%d.%m %H:%M")
 
 
+def fmt_day(value: str) -> str:
+    return parse_iso(value).astimezone(MSK).strftime("%d.%m.%Y")
+
+
+def fmt_time(value: str) -> str:
+    return parse_iso(value).astimezone(MSK).strftime("%H:%M")
+
+
 def parse_hhmm(value: str) -> str | None:
     match = TIME_RE.match(value.strip())
     if not match:
@@ -283,17 +291,27 @@ class Database:
             "measured_at": now,
         }
 
-    async def list_bp(self, user_id: int, limit: int = 10) -> list[dict]:
+    async def list_bp(
+        self, user_id: int, limit: int = 10, offset: int = 0
+    ) -> list[dict]:
         cursor = await self.db.execute(
             """
             SELECT * FROM bp_readings
             WHERE user_id = ?
             ORDER BY measured_at DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
-            (user_id, limit),
+            (user_id, limit, offset),
         )
         return [dict(r) for r in await cursor.fetchall()]
+
+    async def count_bp(self, user_id: int) -> int:
+        cursor = await self.db.execute(
+            "SELECT COUNT(*) AS n FROM bp_readings WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row["n"]) if row else 0
 
     async def bp_for_date(self, user_id: int, day: str) -> list[dict]:
         cursor = await self.db.execute(

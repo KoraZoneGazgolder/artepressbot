@@ -40,7 +40,8 @@ async def main() -> None:
         [
             BotCommand(command="start", description="Старт / заявка"),
             BotCommand(command="today", description="Сегодня"),
-            BotCommand(command="history", description="История давления"),
+            BotCommand(command="list", description="Список измерений"),
+            BotCommand(command="history", description="Список измерений"),
             BotCommand(command="meds", description="Таблетки"),
             BotCommand(command="addmed", description="Добавить препарат"),
             BotCommand(command="help", description="Справка"),

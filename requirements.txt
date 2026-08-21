@@ -4,3 +4,5 @@ apscheduler==3.10.4
 pydantic-settings==2.7.1
 python-dotenv==1.0.1
 tzdata==2025.2
+Pillow==11.3.0
+pytesseract==0.3.13

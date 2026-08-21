@@ -1,11 +1,19 @@
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from app.db import db, fmt_dt, now_msk
 from app.filters import ApprovedUser
-from app.keyboards import access_keyboard
+from app.keyboards import (
+    BTN_HELP,
+    BTN_LIST,
+    BTN_MEDS,
+    BTN_TODAY,
+    access_keyboard,
+    keyboard_for,
+    main_keyboard,
+)
 from app import texts
 
 router = Router()
@@ -25,16 +33,22 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     user = await db.upsert_on_start(telegram_id, username, full_name)
 
     if user["became_admin"]:
-        await message.answer(f"{texts.FIRST_ADMIN}\n\n{texts.HELP}{texts.ADMIN_HELP}")
+        await message.answer(
+            f"{texts.FIRST_ADMIN}\n\n{texts.HELP}{texts.ADMIN_HELP}",
+            reply_markup=main_keyboard(),
+        )
         return
 
     if user["status"] == "approved":
         extra = texts.ADMIN_HELP if user["role"] == "admin" else ""
-        await message.answer(f"Снова здравствуйте.\n\n{texts.HELP}{extra}")
+        await message.answer(
+            f"Снова здравствуйте.\n\n{texts.HELP}{extra}",
+            reply_markup=main_keyboard(),
+        )
         return
 
     if user["status"] == "denied":
-        await message.answer(texts.DENIED)
+        await message.answer(texts.DENIED, reply_markup=keyboard_for(user))
         return
 
     if user.get("just_created") or user.get("reopened_request"):
@@ -53,21 +67,23 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
                 )
             except Exception:
                 continue
-    await message.answer(texts.PENDING)
+    await message.answer(texts.PENDING, reply_markup=keyboard_for(user))
 
 
 @router.message(Command("help"))
+@router.message(F.text == BTN_HELP)
 async def cmd_help(message: Message, state: FSMContext) -> None:
     await state.clear()
     user = await db.get_user_by_telegram(message.from_user.id) if message.from_user else None
     extra = texts.ADMIN_HELP if user and user["role"] == "admin" and user["status"] == "approved" else ""
-    await message.answer(texts.HELP + extra)
+    await message.answer(texts.HELP + extra, reply_markup=keyboard_for(user))
 
 
 @router.message(Command("cancel"))
 async def cmd_cancel(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await message.answer("Отменил.")
+    user = await db.get_user_by_telegram(message.from_user.id) if message.from_user else None
+    await message.answer("Отменил.", reply_markup=keyboard_for(user))
 
 
 @router.message(Command("id"))
@@ -77,7 +93,9 @@ async def cmd_id(message: Message) -> None:
 
 
 @router.message(Command("today"), ApprovedUser())
-async def cmd_today(message: Message, db_user: dict) -> None:
+@router.message(F.text == BTN_TODAY, ApprovedUser())
+async def cmd_today(message: Message, db_user: dict, state: FSMContext) -> None:
+    await state.clear()
     day = now_msk().strftime("%Y-%m-%d")
     readings = await db.bp_for_date(db_user["id"], day)
     logs = await db.pill_logs_for_date(db_user["id"], day)
@@ -117,4 +135,19 @@ async def cmd_today(message: Message, db_user: dict) -> None:
     else:
         lines.append("Таблетки: список пуст. Добавьте через /addmed")
 
-    await message.answer("\n".join(lines))
+    await message.answer("\n".join(lines), reply_markup=main_keyboard())
+
+
+@router.message(F.text == BTN_LIST, ApprovedUser())
+async def btn_list(message: Message, db_user: dict, state: FSMContext) -> None:
+    await state.clear()
+    from app.handlers.pressure import cmd_list
+
+    await cmd_list(message, db_user)
+
+
+@router.message(F.text == BTN_MEDS, ApprovedUser())
+async def btn_meds(message: Message, db_user: dict, state: FSMContext) -> None:
+    from app.handlers.meds import cmd_meds
+
+    await cmd_meds(message, db_user, state)

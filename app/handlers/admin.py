@@ -4,7 +4,7 @@ from aiogram.types import CallbackQuery, Message
 
 from app.db import db
 from app.filters import AdminUser
-from app.keyboards import AccessCb, access_keyboard
+from app.keyboards import AccessCb, access_keyboard, keyboard_for, main_keyboard
 
 router = Router()
 
@@ -48,15 +48,19 @@ async def access_decision(query: CallbackQuery, callback_data: AccessCb) -> None
 
     if callback_data.action == "approve":
         note = f"Одобрил {user.get('full_name') or callback_data.telegram_id}"
-        user_text = "Доступ открыт. Можно писать давление: 120/80 72\n/help — команды"
+        user_text = "Доступ открыт. Давление: 120/80 72 или фото экрана. Кнопки внизу."
+        user_kb = main_keyboard()
     else:
         note = f"Отклонил {user.get('full_name') or callback_data.telegram_id}"
         user_text = "Доступ отклонён."
+        user_kb = keyboard_for(user)
 
     await query.answer(note)
     if query.message:
         await query.message.edit_text(note)
     try:
-        await query.bot.send_message(callback_data.telegram_id, user_text)
+        await query.bot.send_message(
+            callback_data.telegram_id, user_text, reply_markup=user_kb
+        )
     except Exception:
         pass

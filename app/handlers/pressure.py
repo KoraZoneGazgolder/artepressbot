@@ -132,8 +132,8 @@ async def _ocr_and_ask(message: Message, file_id: str) -> None:
     reading = await asyncio.to_thread(extract_bp_from_image, data)
     if reading is None:
         await message.answer(
-            "Не разобрал цифры. Снимите экран ближе, без блика, "
-            "или напишите <code>120/80 72</code>"
+            "Не разобрал цифры с экрана. Можно ещё раз снять ближе "
+            "или написать <code>120/80 72</code>"
         )
         return
     systolic, diastolic, pulse = reading

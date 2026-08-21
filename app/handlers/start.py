@@ -6,6 +6,7 @@ from aiogram.types import Message
 from app.db import db, fmt_dt, now_msk
 from app.filters import ApprovedUser
 from app.keyboards import (
+    BTN_EXPORT,
     BTN_HELP,
     BTN_LIST,
     BTN_MEDS,
@@ -151,3 +152,11 @@ async def btn_meds(message: Message, db_user: dict, state: FSMContext) -> None:
     from app.handlers.meds import cmd_meds
 
     await cmd_meds(message, db_user, state)
+
+
+@router.message(F.text == BTN_EXPORT, ApprovedUser())
+async def btn_export(message: Message, db_user: dict, state: FSMContext) -> None:
+    await state.clear()
+    from app.handlers.pressure import cmd_export
+
+    await cmd_export(message, db_user)

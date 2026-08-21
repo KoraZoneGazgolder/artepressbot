@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import asyncio
-from io import BytesIO
-
 from aiogram import F, Router
 from aiogram.filters import BaseFilter, Command, StateFilter
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-from app.db import db, fmt_day, fmt_dt, fmt_time, parse_bp
+from app.db import db, fmt_day, fmt_dt, fmt_time, now_msk, parse_bp
+from app.export import pills_csv, pressure_csv
 from app.filters import ApprovedUser
-from app.keyboards import ListCb, PhotoBpCb, list_keyboard, main_keyboard, photo_bp_keyboard
-from app.ocr import extract_bp_from_image
+from app.keyboards import ListCb, list_keyboard, main_keyboard
 from app import texts
 
 router = Router()
@@ -33,13 +30,6 @@ class LooksLikeBp(BaseFilter):
         if not text or parse_bp(text) is not None:
             return False
         return "/" in text and any(ch.isdigit() for ch in text)
-
-
-def _format_reading(row: dict) -> str:
-    return (
-        f"{fmt_dt(row['measured_at'])} — "
-        f"{row['systolic']}/{row['diastolic']}, пульс {row['pulse']}"
-    )
 
 
 def format_bp_page(rows: list[dict], total: int, offset: int) -> str:
@@ -73,7 +63,7 @@ async def list_page(query: CallbackQuery, callback_data: ListCb, db_user: dict) 
 async def _send_list(message: Message, db_user: dict, offset: int, edit: bool) -> None:
     total = await db.count_bp(db_user["id"])
     if total == 0:
-        text = "Пока нет измерений. Пришлите фото экрана или <code>120/80 72</code>"
+        text = "Пока нет измерений. Пришлите <code>120/80 72</code>"
         if edit:
             await message.edit_text(text)
         else:
@@ -87,6 +77,42 @@ async def _send_list(message: Message, db_user: dict, offset: int, edit: bool) -
         await message.edit_text(text, reply_markup=markup)
         return
     await message.answer(text, reply_markup=markup or main_keyboard())
+
+
+@router.message(Command("export"), ApprovedUser())
+@router.message(Command("table"), ApprovedUser())
+async def cmd_export(message: Message, db_user: dict) -> None:
+    readings = await db.list_bp(db_user["id"], limit=100000, offset=0)
+    logs = await db.list_all_pill_logs(db_user["id"])
+    if not readings and not logs:
+        await message.answer(
+            "Пока нечего выгружать. Сначала запишите давление: <code>120/80 72</code>",
+            reply_markup=main_keyboard(),
+        )
+        return
+
+    stamp = now_msk().strftime("%Y-%m-%d")
+    sent = 0
+    if readings:
+        await message.answer_document(
+            BufferedInputFile(
+                pressure_csv(readings),
+                filename=f"davlenie_{stamp}.csv",
+            ),
+            caption=f"Давление: {len(readings)} записей. Откройте в Excel.",
+        )
+        sent += 1
+    if logs:
+        await message.answer_document(
+            BufferedInputFile(
+                pills_csv(logs),
+                filename=f"tabletki_{stamp}.csv",
+            ),
+            caption=f"Таблетки: {len(logs)} отметок.",
+        )
+        sent += 1
+    if sent:
+        await message.answer("Готово.", reply_markup=main_keyboard())
 
 
 @router.message(StateFilter(None), ApprovedUser(), IsBp())
@@ -107,61 +133,5 @@ async def almost_pressure(message: Message) -> None:
 
 
 @router.message(StateFilter(None), ApprovedUser(), F.photo)
-async def photo_pressure(message: Message) -> None:
-    photo = message.photo[-1]
-    await _ocr_and_ask(message, photo.file_id)
-
-
-@router.message(
-    StateFilter(None),
-    ApprovedUser(),
-    F.document.mime_type.startswith("image/"),
-)
-async def document_pressure(message: Message) -> None:
-    document = message.document
-    if document is None:
-        return
-    await _ocr_and_ask(message, document.file_id)
-
-
-async def _ocr_and_ask(message: Message, file_id: str) -> None:
-    await message.answer("Смотрю фото тонометра…")
-    buffer = BytesIO()
-    await message.bot.download(file_id, destination=buffer)
-    data = buffer.getvalue()
-    reading = await asyncio.to_thread(extract_bp_from_image, data)
-    if reading is None:
-        await message.answer(
-            "Не разобрал цифры с экрана. Можно ещё раз снять ближе "
-            "или написать <code>120/80 72</code>"
-        )
-        return
-    systolic, diastolic, pulse = reading
-    await message.answer(
-        f"На фото: <b>{systolic}/{diastolic}</b>, пульс <b>{pulse}</b>\n"
-        "Записать?",
-        reply_markup=photo_bp_keyboard(systolic, diastolic, pulse),
-    )
-
-
-@router.callback_query(PhotoBpCb.filter(), ApprovedUser())
-async def photo_bp_decision(
-    query: CallbackQuery, callback_data: PhotoBpCb, db_user: dict
-) -> None:
-    if callback_data.action != "ok":
-        await query.answer("Ок, не записываю")
-        if query.message:
-            await query.message.edit_text(
-                "Не записал. Можно прислать другое фото или <code>120/80 72</code>"
-            )
-        return
-
-    row = await db.add_bp(
-        db_user["id"], callback_data.s, callback_data.d, callback_data.p
-    )
-    await query.answer("Записал")
-    if query.message:
-        await query.message.edit_text(
-            f"Записал: {callback_data.s}/{callback_data.d}, "
-            f"пульс {callback_data.p}\n{fmt_dt(row['measured_at'])}"
-        )
+async def photo_hint(message: Message) -> None:
+    await message.answer("Фото не разбираю. Напишите цифры: <code>120/80 72</code>")

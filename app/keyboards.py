@@ -18,13 +18,6 @@ class MedCb(CallbackData, prefix="med"):
     med_id: int
 
 
-class PhotoBpCb(CallbackData, prefix="pbp"):
-    action: str
-    s: int
-    d: int
-    p: int
-
-
 class ListCb(CallbackData, prefix="list"):
     offset: int
 
@@ -32,8 +25,9 @@ class ListCb(CallbackData, prefix="list"):
 BTN_TODAY = "Сегодня"
 BTN_LIST = "Список"
 BTN_MEDS = "Таблетки"
+BTN_EXPORT = "Таблица"
 BTN_HELP = "Справка"
-MENU_BUTTONS = {BTN_TODAY, BTN_LIST, BTN_MEDS, BTN_HELP}
+MENU_BUTTONS = {BTN_TODAY, BTN_LIST, BTN_MEDS, BTN_EXPORT, BTN_HELP}
 
 
 def main_keyboard() -> ReplyKeyboardMarkup:
@@ -41,8 +35,9 @@ def main_keyboard() -> ReplyKeyboardMarkup:
     builder.button(text=BTN_TODAY)
     builder.button(text=BTN_LIST)
     builder.button(text=BTN_MEDS)
+    builder.button(text=BTN_EXPORT)
     builder.button(text=BTN_HELP)
-    builder.adjust(2, 2)
+    builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True, is_persistent=True)
 
 
@@ -86,20 +81,6 @@ def meds_manage_keyboard(meds: list[dict]) -> InlineKeyboardMarkup:
             text="Удалить",
             callback_data=MedCb(action="delete", med_id=med["id"]),
         )
-    builder.adjust(2)
-    return builder.as_markup()
-
-
-def photo_bp_keyboard(systolic: int, diastolic: int, pulse: int) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(
-        text="Записать",
-        callback_data=PhotoBpCb(action="ok", s=systolic, d=diastolic, p=pulse),
-    )
-    builder.button(
-        text="Не то",
-        callback_data=PhotoBpCb(action="no", s=systolic, d=diastolic, p=pulse),
-    )
     builder.adjust(2)
     return builder.as_markup()
 

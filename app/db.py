@@ -436,6 +436,19 @@ class Database:
         )
         return [dict(r) for r in await cursor.fetchall()]
 
+    async def list_all_pill_logs(self, user_id: int) -> list[dict]:
+        cursor = await self.db.execute(
+            """
+            SELECT pill_logs.*, medications.name AS med_name
+            FROM pill_logs
+            JOIN medications ON medications.id = pill_logs.medication_id
+            WHERE pill_logs.user_id = ?
+            ORDER BY pill_logs.scheduled_date, pill_logs.scheduled_time
+            """,
+            (user_id,),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
     async def mark_reminder_sent(self, user_id: int, kind: str, slot: str, day: str) -> bool:
         try:
             await self.db.execute(

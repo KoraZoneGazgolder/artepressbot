@@ -48,7 +48,7 @@ async def access_decision(query: CallbackQuery, callback_data: AccessCb) -> None
 
     if callback_data.action == "approve":
         note = f"Одобрил {user.get('full_name') or callback_data.telegram_id}"
-        user_text = "Доступ открыт. Давление: 120/80 72 или фото экрана. Кнопки внизу."
+        user_text = "Доступ открыт. Давление: 120/80 72. Кнопки внизу."
         user_kb = main_keyboard()
     else:
         note = f"Отклонил {user.get('full_name') or callback_data.telegram_id}"

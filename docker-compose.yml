@@ -1,0 +1,15 @@
+services:
+  bot:
+    build: .
+    container_name: bp-diary-bot
+    env_file:
+      - .env
+    environment:
+      TZ: Europe/Moscow
+      DB_PATH: /app/data/diary.db
+    volumes:
+      - bp_diary_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  bp_diary_data:

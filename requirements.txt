@@ -1,0 +1,6 @@
+aiogram==3.17.0
+aiosqlite==0.21.0
+apscheduler==3.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+tzdata==2025.2

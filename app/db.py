@@ -136,6 +136,7 @@ class Database:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
+                dosage TEXT NOT NULL DEFAULT '',
                 times TEXT NOT NULL,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL
@@ -165,6 +166,16 @@ class Database:
             """
         )
         await self.db.commit()
+        await self._ensure_columns()
+
+    async def _ensure_columns(self) -> None:
+        cursor = await self.db.execute("PRAGMA table_info(medications)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "dosage" not in columns:
+            await self.db.execute(
+                "ALTER TABLE medications ADD COLUMN dosage TEXT NOT NULL DEFAULT ''"
+            )
+            await self.db.commit()
 
     async def upsert_on_start(
         self,
@@ -325,20 +336,37 @@ class Database:
             if parse_iso(r["measured_at"]).astimezone(MSK).strftime("%Y-%m-%d") == day
         ]
 
-    async def add_med(self, user_id: int, name: str, times: list[str]) -> dict:
+    async def add_med(
+        self, user_id: int, name: str, times: list[str], dosage: str = ""
+    ) -> dict:
         cursor = await self.db.execute(
             """
-            INSERT INTO medications (user_id, name, times, is_active, created_at)
-            VALUES (?, ?, ?, 1, ?)
+            INSERT INTO medications (user_id, name, dosage, times, is_active, created_at)
+            VALUES (?, ?, ?, ?, 1, ?)
             """,
-            (user_id, name.strip(), json.dumps(times, ensure_ascii=False), iso(now_utc())),
+            (
+                user_id,
+                name.strip(),
+                dosage.strip(),
+                json.dumps(times, ensure_ascii=False),
+                iso(now_utc()),
+            ),
         )
         await self.db.commit()
         return {
             "id": cursor.lastrowid,
             "name": name.strip(),
+            "dosage": dosage.strip(),
             "times": times,
         }
+
+    async def update_med_dosage(self, med_id: int, user_id: int, dosage: str) -> bool:
+        cursor = await self.db.execute(
+            "UPDATE medications SET dosage = ? WHERE id = ? AND user_id = ? AND is_active = 1",
+            (dosage.strip(), med_id, user_id),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
 
     async def list_meds(self, user_id: int, active_only: bool = True) -> list[dict]:
         sql = "SELECT * FROM medications WHERE user_id = ?"
@@ -426,7 +454,7 @@ class Database:
     async def pill_logs_for_date(self, user_id: int, day: str) -> list[dict]:
         cursor = await self.db.execute(
             """
-            SELECT pill_logs.*, medications.name AS med_name
+            SELECT pill_logs.*, medications.name AS med_name, medications.dosage AS med_dosage
             FROM pill_logs
             JOIN medications ON medications.id = pill_logs.medication_id
             WHERE pill_logs.user_id = ? AND pill_logs.scheduled_date = ?
@@ -439,7 +467,7 @@ class Database:
     async def list_all_pill_logs(self, user_id: int) -> list[dict]:
         cursor = await self.db.execute(
             """
-            SELECT pill_logs.*, medications.name AS med_name
+            SELECT pill_logs.*, medications.name AS med_name, medications.dosage AS med_dosage
             FROM pill_logs
             JOIN medications ON medications.id = pill_logs.medication_id
             WHERE pill_logs.user_id = ?

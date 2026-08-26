@@ -3,7 +3,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from app.db import db, fmt_dt, now_msk
+from app.db import db, fmt_dt, fmt_time, now_msk
 from app.filters import ApprovedUser
 from app.keyboards import (
     BTN_EXPORT,
@@ -119,20 +119,25 @@ async def cmd_today(message: Message, db_user: dict, state: FSMContext) -> None:
         for med in meds:
             for time_hhmm in med["times"]:
                 log = log_map.get((med["id"], time_hhmm))
-                mark = "•"
-                extra = ""
+                mark = "○"
+                extra = f"план {time_hhmm}"
                 if log:
                     status = log["status"]
                     if status == "taken":
                         mark = "✓"
+                        taken = (
+                            fmt_time(log["confirmed_at"])
+                            if log.get("confirmed_at")
+                            else time_hhmm
+                        )
+                        extra = f"план {time_hhmm}, выпил {taken}"
                     elif status == "skipped":
                         mark = "✗"
+                        extra = f"план {time_hhmm}, пропуск"
                     elif status == "snoozed":
                         mark = "⏳"
-                    else:
-                        mark = "○"
-                extra = f" {time_hhmm}"
-                lines.append(f"{mark} {med['name']}{extra}")
+                        extra = f"план {time_hhmm}, позже"
+                lines.append(f"{mark} {texts.med_title(med)} — {extra}")
     else:
         lines.append("Таблетки: список пуст. Добавьте через /addmed")
 

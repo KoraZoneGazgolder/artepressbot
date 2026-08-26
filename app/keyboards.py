@@ -70,18 +70,30 @@ def pill_keyboard(log_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def _short_med_name(name: str, max_len: int = 16) -> str:
+    name = name.strip()
+    if len(name) <= max_len:
+        return name
+    return name[: max_len - 1] + "…"
+
+
 def meds_manage_keyboard(meds: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for med in meds:
+        short = _short_med_name(med["name"])
         builder.button(
-            text=f"Выпил: {med['name']}",
+            text=f"Выпил: {short}",
             callback_data=MedCb(action="take", med_id=med["id"]),
+        )
+        builder.button(
+            text="Доза",
+            callback_data=MedCb(action="dose", med_id=med["id"]),
         )
         builder.button(
             text="Удалить",
             callback_data=MedCb(action="delete", med_id=med["id"]),
         )
-    builder.adjust(2)
+    builder.adjust(3)
     return builder.as_markup()
 
 

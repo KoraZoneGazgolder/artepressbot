@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
+from app import texts
 from app.config import settings
 from app.db import db, iso, now_msk, now_utc, parse_times_list
 from app.filters import ApprovedUser
@@ -16,7 +17,12 @@ router = Router()
 
 class AddMed(StatesGroup):
     name = State()
+    dosage = State()
     times = State()
+
+
+class EditDose(StatesGroup):
+    value = State()
 
 
 def _times_label(times: list[str]) -> str:
@@ -40,7 +46,7 @@ async def cmd_meds(message: Message, db_user: dict, state: FSMContext) -> None:
         return
     lines = ["Ваши таблетки:"]
     for med in meds:
-        lines.append(f"• {med['name']} — {_times_label(med['times'])}")
+        lines.append(f"• {texts.med_title(med)} — {_times_label(med['times'])}")
     await message.answer("\n".join(lines), reply_markup=meds_manage_keyboard(meds))
 
 
@@ -57,6 +63,17 @@ async def addmed_name(message: Message, state: FSMContext) -> None:
         await message.answer("Пришлите название текстом, или /cancel")
         return
     await state.update_data(name=name)
+    await state.set_state(AddMed.dosage)
+    await message.answer("Дозировка, например: <code>10 мг</code> или <code>125 мкг</code>")
+
+
+@router.message(AddMed.dosage, ApprovedUser(), F.text)
+async def addmed_dosage(message: Message, state: FSMContext) -> None:
+    dosage = (message.text or "").strip()
+    if not dosage or dosage.startswith("/"):
+        await message.answer("Пришлите дозировку текстом, или /cancel")
+        return
+    await state.update_data(dosage=dosage)
     await state.set_state(AddMed.times)
     await message.answer(
         "Время приёма через запятую, например:\n"
@@ -71,13 +88,38 @@ async def addmed_times(message: Message, db_user: dict, state: FSMContext) -> No
         await message.answer("Не разобрал время. Пример: <code>08:00, 20:00</code>")
         return
     data = await state.get_data()
-    await db.add_med(db_user["id"], data["name"], times)
+    await db.add_med(db_user["id"], data["name"], times, data.get("dosage", ""))
     await state.clear()
-    await message.answer(f"Добавил {data['name']} — {_times_label(times)}")
+    title = texts.med_title({"name": data["name"], "dosage": data.get("dosage", "")})
+    await message.answer(f"Добавил {title} — {_times_label(times)}")
+
+
+@router.message(EditDose.value, ApprovedUser(), F.text)
+async def edit_dose_value(message: Message, db_user: dict, state: FSMContext) -> None:
+    dosage = (message.text or "").strip()
+    if not dosage or dosage.startswith("/"):
+        await message.answer("Пришлите новую дозировку текстом, или /cancel")
+        return
+    data = await state.get_data()
+    med_id = data.get("med_id")
+    if not med_id:
+        await state.clear()
+        await message.answer("Не нашёл препарат. Откройте /meds ещё раз.")
+        return
+    ok = await db.update_med_dosage(med_id, db_user["id"], dosage)
+    await state.clear()
+    if not ok:
+        await message.answer("Не удалось обновить дозировку.")
+        return
+    med = await db.get_med(med_id)
+    title = texts.med_title(med) if med else dosage
+    await message.answer(f"Дозировка обновлена: {title}")
 
 
 @router.callback_query(MedCb.filter(), ApprovedUser())
-async def med_actions(query: CallbackQuery, callback_data: MedCb, db_user: dict) -> None:
+async def med_actions(
+    query: CallbackQuery, callback_data: MedCb, db_user: dict, state: FSMContext
+) -> None:
     med = await db.get_med(callback_data.med_id)
     if med is None or med["user_id"] != db_user["id"]:
         await query.answer("Не найдено", show_alert=True)
@@ -87,7 +129,18 @@ async def med_actions(query: CallbackQuery, callback_data: MedCb, db_user: dict)
         await db.deactivate_med(med["id"], db_user["id"])
         await query.answer("Удалил")
         if query.message:
-            await query.message.edit_text(f"Удалил {med['name']}")
+            await query.message.edit_text(f"Удалил {texts.med_title(med)}")
+        return
+
+    if callback_data.action == "dose":
+        await state.set_state(EditDose.value)
+        await state.update_data(med_id=med["id"])
+        current = (med.get("dosage") or "").strip() or "не указана"
+        await query.answer()
+        if query.message:
+            await query.message.answer(
+                f"Новая дозировка для {med['name']} (сейчас: {current}):"
+            )
         return
 
     if callback_data.action == "take":
@@ -103,7 +156,9 @@ async def med_actions(query: CallbackQuery, callback_data: MedCb, db_user: dict)
         )
         await query.answer("Отметил")
         if query.message:
-            await query.message.answer(f"✓ {med['name']} в {closest}")
+            await query.message.answer(
+                f"✓ {texts.med_title(med)} — выпили в {hhmm}"
+            )
         return
 
     await query.answer()
@@ -116,7 +171,8 @@ async def pill_actions(query: CallbackQuery, callback_data: PillCb, db_user: dic
         await query.answer("Запись не найдена", show_alert=True)
         return
     med = await db.get_med(log["medication_id"])
-    name = med["name"] if med else "таблетка"
+    title = texts.med_title(med) if med else "таблетка"
+    taken_hhmm = now_msk().strftime("%H:%M")
 
     if callback_data.action == "taken":
         await db.update_pill_log(
@@ -127,7 +183,7 @@ async def pill_actions(query: CallbackQuery, callback_data: PillCb, db_user: dic
         )
         await query.answer("Отлично")
         if query.message:
-            await query.message.edit_text(f"✓ {name} — выпили в {log['scheduled_time']}")
+            await query.message.edit_text(f"✓ {title} — выпили в {taken_hhmm}")
         return
 
     if callback_data.action == "skip":
@@ -139,7 +195,7 @@ async def pill_actions(query: CallbackQuery, callback_data: PillCb, db_user: dic
         )
         await query.answer("Записал пропуск")
         if query.message:
-            await query.message.edit_text(f"✗ {name} — пропуск {log['scheduled_time']}")
+            await query.message.edit_text(f"✗ {title} — пропуск {log['scheduled_time']}")
         return
 
     if callback_data.action == "later":
@@ -152,7 +208,7 @@ async def pill_actions(query: CallbackQuery, callback_data: PillCb, db_user: dic
         await query.answer(f"Напомню через {settings.snooze_minutes} мин")
         if query.message:
             await query.message.edit_text(
-                f"⏳ {name} — напомню через {settings.snooze_minutes} мин"
+                f"⏳ {title} — напомню через {settings.snooze_minutes} мин"
             )
         return
 

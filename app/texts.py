@@ -8,8 +8,8 @@ HELP = (
     "/list — список измерений\n"
     "/export — таблица CSV (давление и таблетки)\n"
     "/history — то же, что /list\n"
-    "/meds — мои таблетки\n"
-    "/addmed — добавить препарат\n"
+    "/meds — мои таблетки (выпил / доза / удалить)\n"
+    "/addmed — добавить препарат: название, дозировка, время\n"
     "/cancel — отменить ввод\n"
     "/help — эта справка"
 )
@@ -32,3 +32,9 @@ FIRST_ADMIN = (
     "Вы первый пользователь — вы админ.\n"
     "Остальные из семьи пишут /start, вам придёт заявка."
 )
+
+
+def med_title(med: dict) -> str:
+    dose = (med.get("dosage") or "").strip()
+    name = med.get("name") or med.get("med_name") or "таблетка"
+    return f"{name}, {dose}" if dose else name

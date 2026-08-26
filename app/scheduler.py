@@ -3,6 +3,7 @@ import logging
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from app import texts
 from app.config import settings
 from app.db import db, due_within, iso, now_msk, now_utc, parse_iso
 from app.keyboards import pill_keyboard
@@ -68,7 +69,10 @@ async def _maybe_pill_reminders(bot: Bot, user: dict, now, day: str) -> None:
             if not should_send:
                 continue
 
-            text = f"Пора выпить: <b>{med['name']}</b>\nВремя по расписанию: {hhmm}"
+            text = (
+                f"Пора выпить: <b>{texts.med_title(med)}</b>\n"
+                f"Время по расписанию: {hhmm}"
+            )
             try:
                 await bot.send_message(
                     user["telegram_id"],

@@ -39,13 +39,18 @@ def pressure_csv(readings: list[dict]) -> bytes:
 
 
 def pills_csv(logs: list[dict]) -> bytes:
-    lines: list[list[object]] = [["Дата", "Время", "Препарат", "Статус"]]
+    lines: list[list[object]] = [
+        ["Дата", "Время план", "Время факт", "Препарат", "Дозировка", "Статус"]
+    ]
     for row in logs:
+        confirmed = row.get("confirmed_at")
         lines.append(
             [
                 datetime.strptime(row["scheduled_date"], "%Y-%m-%d").strftime("%d.%m.%Y"),
                 row["scheduled_time"],
+                fmt_time(confirmed) if confirmed else "",
                 row.get("med_name") or "",
+                row.get("med_dosage") or "",
                 PILL_STATUS.get(row["status"], row["status"]),
             ]
         )

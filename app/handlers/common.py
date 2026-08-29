@@ -21,7 +21,7 @@ async def fallback(message: Message) -> None:
     if user["status"] == "denied":
         await message.answer(texts.DENIED)
         return
-    await message.answer("Не понял. Давление: <code>120/80 72</code> или /list")
+    await message.answer(f"Не понял.\n{texts.BP_HOW}\nИли нажмите Список / Справка.")
 
 
 @router.callback_query()

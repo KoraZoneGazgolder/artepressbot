@@ -2,6 +2,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
+from app import texts
 from app.db import db
 from app.filters import AdminUser
 from app.keyboards import AccessCb, access_keyboard, keyboard_for, main_keyboard
@@ -48,7 +49,7 @@ async def access_decision(query: CallbackQuery, callback_data: AccessCb) -> None
 
     if callback_data.action == "approve":
         note = f"Одобрил {user.get('full_name') or callback_data.telegram_id}"
-        user_text = "Доступ открыт. Давление: 120/80 72. Кнопки внизу."
+        user_text = texts.ACCESS_OPENED
         user_kb = main_keyboard()
     else:
         note = f"Отклонил {user.get('full_name') or callback_data.telegram_id}"

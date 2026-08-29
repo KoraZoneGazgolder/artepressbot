@@ -5,7 +5,17 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app import texts
 from app.config import settings
-from app.db import db, due_within, iso, now_msk, now_utc, parse_iso
+from app.db import (
+    db,
+    due_within,
+    iso,
+    now_msk,
+    now_utc,
+    parse_iso,
+    user_bp_evening,
+    user_bp_morning,
+    user_bp_reminders_on,
+)
 from app.keyboards import pill_keyboard
 
 log = logging.getLogger(__name__)
@@ -22,8 +32,13 @@ async def tick(bot: Bot) -> None:
     day = now.strftime("%Y-%m-%d")
     users = await db.list_approved()
     for user in users:
-        await _maybe_bp_reminder(bot, user, now, day, "morning", settings.bp_morning)
-        await _maybe_bp_reminder(bot, user, now, day, "evening", settings.bp_evening)
+        if user_bp_reminders_on(user):
+            await _maybe_bp_reminder(
+                bot, user, now, day, "morning", user_bp_morning(user)
+            )
+            await _maybe_bp_reminder(
+                bot, user, now, day, "evening", user_bp_evening(user)
+            )
         await _maybe_pill_reminders(bot, user, now, day)
 
 
@@ -38,7 +53,7 @@ async def _maybe_bp_reminder(
     when = "утреннее" if slot == "morning" else "вечернее"
     text = (
         f"Пора записать {when} давление.\n"
-        f"Пришлите одним сообщением: <code>120/80 72</code>"
+        f"{texts.BP_HOW}"
     )
     try:
         await bot.send_message(user["telegram_id"], text)

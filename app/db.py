@@ -61,6 +61,21 @@ def parse_hhmm(value: str) -> str | None:
     return f"{hour:02d}:{minute:02d}"
 
 
+def user_bp_reminders_on(user: dict) -> bool:
+    value = user.get("bp_reminders")
+    if value is None:
+        return True
+    return bool(int(value))
+
+
+def user_bp_morning(user: dict) -> str:
+    return user.get("bp_morning") or settings.bp_morning
+
+
+def user_bp_evening(user: dict) -> str:
+    return user.get("bp_evening") or settings.bp_evening
+
+
 def parse_times_list(raw: str) -> list[str] | None:
     parts = [p.strip() for p in re.split(r"[,;]\s*|\s+", raw.strip()) if p.strip()]
     times: list[str] = []
@@ -118,6 +133,9 @@ class Database:
                 full_name TEXT,
                 role TEXT NOT NULL DEFAULT 'user',
                 status TEXT NOT NULL DEFAULT 'pending',
+                bp_reminders INTEGER NOT NULL DEFAULT 1,
+                bp_morning TEXT NOT NULL DEFAULT '09:00',
+                bp_evening TEXT NOT NULL DEFAULT '20:00',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -169,12 +187,24 @@ class Database:
         await self._ensure_columns()
 
     async def _ensure_columns(self) -> None:
-        cursor = await self.db.execute("PRAGMA table_info(medications)")
+        await self._add_column_if_missing(
+            "medications", "dosage", "TEXT NOT NULL DEFAULT ''"
+        )
+        await self._add_column_if_missing(
+            "users", "bp_reminders", "INTEGER NOT NULL DEFAULT 1"
+        )
+        await self._add_column_if_missing(
+            "users", "bp_morning", "TEXT NOT NULL DEFAULT '09:00'"
+        )
+        await self._add_column_if_missing(
+            "users", "bp_evening", "TEXT NOT NULL DEFAULT '20:00'"
+        )
+
+    async def _add_column_if_missing(self, table: str, name: str, decl: str) -> None:
+        cursor = await self.db.execute(f"PRAGMA table_info({table})")
         columns = {row[1] for row in await cursor.fetchall()}
-        if "dosage" not in columns:
-            await self.db.execute(
-                "ALTER TABLE medications ADD COLUMN dosage TEXT NOT NULL DEFAULT ''"
-            )
+        if name not in columns:
+            await self.db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
             await self.db.commit()
 
     async def upsert_on_start(
@@ -273,6 +303,25 @@ class Database:
             "SELECT * FROM users WHERE status = 'approved'"
         )
         return [dict(r) for r in await cursor.fetchall()]
+
+    async def set_bp_reminders(self, user_id: int, enabled: bool) -> dict | None:
+        await self.db.execute(
+            "UPDATE users SET bp_reminders = ?, updated_at = ? WHERE id = ?",
+            (1 if enabled else 0, iso(now_utc()), user_id),
+        )
+        await self.db.commit()
+        return await self.get_user(user_id)
+
+    async def set_bp_time(self, user_id: int, slot: str, hhmm: str) -> dict | None:
+        if slot not in {"morning", "evening"}:
+            return await self.get_user(user_id)
+        column = "bp_morning" if slot == "morning" else "bp_evening"
+        await self.db.execute(
+            f"UPDATE users SET {column} = ?, updated_at = ? WHERE id = ?",
+            (hhmm, iso(now_utc()), user_id),
+        )
+        await self.db.commit()
+        return await self.get_user(user_id)
 
     async def set_access(self, telegram_id: int, status: str) -> dict | None:
         await self.db.execute(

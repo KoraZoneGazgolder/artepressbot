@@ -10,7 +10,7 @@ from aiogram.types import BotCommand, BotCommandScopeDefault
 
 from app.config import settings
 from app.db import db
-from app.handlers import admin, common, meds, pressure, start
+from app.handlers import admin, common, meds, pressure, settings as settings_handlers, start
 from app.scheduler import scheduler, setup_scheduler
 
 logging.basicConfig(
@@ -32,6 +32,7 @@ async def main() -> None:
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(start.router)
     dp.include_router(admin.router)
+    dp.include_router(settings_handlers.router)
     dp.include_router(meds.router)
     dp.include_router(pressure.router)
     dp.include_router(common.router)
@@ -40,11 +41,11 @@ async def main() -> None:
         [
             BotCommand(command="start", description="Старт / заявка"),
             BotCommand(command="today", description="Сегодня"),
-            BotCommand(command="list", description="Список измерений"),
-            BotCommand(command="history", description="Список измерений"),
+            BotCommand(command="list", description="Список измерений давления"),
             BotCommand(command="meds", description="Таблетки"),
             BotCommand(command="export", description="Таблица CSV"),
             BotCommand(command="addmed", description="Добавить препарат"),
+            BotCommand(command="settings", description="Напоминания о давлении"),
             BotCommand(command="help", description="Справка"),
         ],
         scope=BotCommandScopeDefault(),

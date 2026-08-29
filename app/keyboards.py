@@ -1,5 +1,5 @@
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from aiogram.types import KeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 
@@ -22,29 +22,54 @@ class ListCb(CallbackData, prefix="list"):
     offset: int
 
 
+class SettingsCb(CallbackData, prefix="bpset"):
+    action: str
+
+
 BTN_TODAY = "Сегодня"
 BTN_LIST = "Список"
 BTN_MEDS = "Таблетки"
 BTN_EXPORT = "Таблица"
 BTN_HELP = "Справка"
-MENU_BUTTONS = {BTN_TODAY, BTN_LIST, BTN_MEDS, BTN_EXPORT, BTN_HELP}
+BTN_SETTINGS = "Настройки"
+MENU_BUTTONS = {BTN_TODAY, BTN_LIST, BTN_MEDS, BTN_EXPORT, BTN_HELP, BTN_SETTINGS}
 
 
 def main_keyboard() -> ReplyKeyboardMarkup:
-    builder = ReplyKeyboardBuilder()
-    builder.button(text=BTN_TODAY)
-    builder.button(text=BTN_LIST)
-    builder.button(text=BTN_MEDS)
-    builder.button(text=BTN_EXPORT)
-    builder.button(text=BTN_HELP)
-    builder.adjust(2, 2, 1)
-    return builder.as_markup(resize_keyboard=True, is_persistent=True)
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_HELP)],
+            [KeyboardButton(text=BTN_TODAY), KeyboardButton(text=BTN_LIST)],
+            [KeyboardButton(text=BTN_MEDS), KeyboardButton(text=BTN_EXPORT)],
+            [KeyboardButton(text=BTN_SETTINGS)],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
 
 
 def keyboard_for(user: dict | None):
     if user and user.get("status") == "approved":
         return main_keyboard()
     return ReplyKeyboardRemove()
+
+
+def settings_keyboard(reminders_on: bool) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Выключить напоминания" if reminders_on else "Включить напоминания",
+        callback_data=SettingsCb(action="toggle"),
+    )
+    builder.button(
+        text="Время утром",
+        callback_data=SettingsCb(action="morning"),
+    )
+    builder.button(
+        text="Время вечером",
+        callback_data=SettingsCb(action="evening"),
+    )
+    builder.adjust(1, 2)
+    return builder.as_markup()
 
 
 def access_keyboard(telegram_id: int) -> InlineKeyboardMarkup:

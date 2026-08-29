@@ -63,7 +63,7 @@ async def list_page(query: CallbackQuery, callback_data: ListCb, db_user: dict) 
 async def _send_list(message: Message, db_user: dict, offset: int, edit: bool) -> None:
     total = await db.count_bp(db_user["id"])
     if total == 0:
-        text = "Пока нет измерений. Пришлите <code>120/80 72</code>"
+        text = f"Пока нет измерений.\n{texts.BP_HOW}"
         if edit:
             await message.edit_text(text)
         else:
@@ -86,7 +86,7 @@ async def cmd_export(message: Message, db_user: dict) -> None:
     logs = await db.list_all_pill_logs(db_user["id"])
     if not readings and not logs:
         await message.answer(
-            "Пока нечего выгружать. Сначала запишите давление: <code>120/80 72</code>",
+            f"Пока нечего выгружать. Сначала запишите давление.\n{texts.BP_HOW}",
             reply_markup=main_keyboard(),
         )
         return
@@ -134,4 +134,4 @@ async def almost_pressure(message: Message) -> None:
 
 @router.message(StateFilter(None), ApprovedUser(), F.photo)
 async def photo_hint(message: Message) -> None:
-    await message.answer("Фото не разбираю. Напишите цифры: <code>120/80 72</code>")
+    await message.answer(f"Фото не разбираю.\n{texts.BP_HOW}")

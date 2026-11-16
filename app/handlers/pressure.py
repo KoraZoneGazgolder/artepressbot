@@ -8,7 +8,7 @@ from app.db import db, fmt_day, fmt_dt, fmt_time, now_msk, parse_bp
 from app.export import pills_csv, pressure_csv
 from app.filters import ApprovedUser
 from app.keyboards import ListCb, list_keyboard, main_keyboard
-from app import texts
+from app import fun, texts
 
 router = Router()
 
@@ -120,11 +120,19 @@ async def save_pressure(
     message: Message, db_user: dict, systolic: int, diastolic: int, pulse: int
 ) -> None:
     row = await db.add_bp(db_user["id"], systolic, diastolic, pulse)
-    await message.answer(
-        f"Записал: {systolic}/{diastolic}, пульс {pulse}\n"
+    lines = [
+        f"Записал: {systolic}/{diastolic}, пульс {pulse}",
         f"{fmt_dt(row['measured_at'])}",
-        reply_markup=main_keyboard(),
+    ]
+    note = fun.milestone_message(
+        await db.count_bp(db_user["id"]),
+        await db.bp_streak_days(db_user["id"]),
+        systolic,
+        diastolic,
     )
+    if note:
+        lines.append(f"\n{note}")
+    await message.answer("\n".join(lines), reply_markup=main_keyboard())
 
 
 @router.message(StateFilter(None), ApprovedUser(), LooksLikeBp())

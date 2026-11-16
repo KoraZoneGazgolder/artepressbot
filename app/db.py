@@ -181,6 +181,15 @@ class Database:
                 sent_date TEXT NOT NULL,
                 UNIQUE(user_id, kind, slot, sent_date)
             );
+
+            CREATE TABLE IF NOT EXISTS feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                message TEXT NOT NULL,
+                reply TEXT,
+                created_at TEXT NOT NULL,
+                replied_at TEXT
+            );
             """
         )
         await self.db.commit()
@@ -199,6 +208,8 @@ class Database:
         await self._add_column_if_missing(
             "users", "bp_evening", "TEXT NOT NULL DEFAULT '20:00'"
         )
+        await self._add_column_if_missing("users", "intro", "TEXT")
+        await self._add_column_if_missing("users", "referral_source", "TEXT")
 
     async def _add_column_if_missing(self, table: str, name: str, decl: str) -> None:
         cursor = await self.db.execute(f"PRAGMA table_info({table})")
@@ -322,6 +333,16 @@ class Database:
         )
         await self.db.commit()
         return await self.get_user(user_id)
+
+    async def set_onboarding(
+        self, telegram_id: int, intro: str, referral_source: str | None
+    ) -> dict | None:
+        await self.db.execute(
+            "UPDATE users SET intro = ?, referral_source = ?, updated_at = ? WHERE telegram_id = ?",
+            (intro.strip(), (referral_source or "").strip() or None, iso(now_utc()), telegram_id),
+        )
+        await self.db.commit()
+        return await self.get_user_by_telegram(telegram_id)
 
     async def set_access(self, telegram_id: int, status: str) -> dict | None:
         await self.db.execute(
@@ -549,6 +570,136 @@ class Database:
             (user_id, kind, slot, day),
         )
         return await cursor.fetchone() is not None
+
+    # --- обратная связь ---
+
+    async def add_feedback(self, user_id: int, message: str) -> int:
+        cursor = await self.db.execute(
+            "INSERT INTO feedback (user_id, message, created_at) VALUES (?, ?, ?)",
+            (user_id, message.strip(), iso(now_utc())),
+        )
+        await self.db.commit()
+        return int(cursor.lastrowid)
+
+    async def get_feedback(self, feedback_id: int) -> dict | None:
+        cursor = await self.db.execute(
+            """
+            SELECT feedback.*, users.full_name, users.username, users.telegram_id
+            FROM feedback JOIN users ON users.id = feedback.user_id
+            WHERE feedback.id = ?
+            """,
+            (feedback_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def set_feedback_reply(self, feedback_id: int, reply: str) -> None:
+        await self.db.execute(
+            "UPDATE feedback SET reply = ?, replied_at = ? WHERE id = ?",
+            (reply.strip(), iso(now_utc()), feedback_id),
+        )
+        await self.db.commit()
+
+    async def count_feedback(self, user_id: int) -> int:
+        cursor = await self.db.execute(
+            "SELECT COUNT(*) AS n FROM feedback WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row["n"]) if row else 0
+
+    # --- статистика для админа ---
+
+    async def user_status_counts(self) -> dict[str, int]:
+        cursor = await self.db.execute(
+            "SELECT status, COUNT(*) AS n FROM users GROUP BY status"
+        )
+        counts = {"approved": 0, "pending": 0, "denied": 0}
+        for row in await cursor.fetchall():
+            counts[row["status"]] = int(row["n"])
+        return counts
+
+    async def bp_stats(self, user_id: int, days: int) -> dict:
+        cutoff = iso(now_utc() - timedelta(days=days))
+        cursor = await self.db.execute(
+            """
+            SELECT COUNT(*) AS n,
+                   AVG(systolic) AS avg_sys,
+                   AVG(diastolic) AS avg_dia,
+                   AVG(pulse) AS avg_pulse,
+                   MAX(measured_at) AS last_at
+            FROM bp_readings
+            WHERE user_id = ? AND measured_at >= ?
+            """,
+            (user_id, cutoff),
+        )
+        row = await cursor.fetchone()
+        result = dict(row) if row else {}
+        result["n"] = int(result.get("n") or 0)
+        if result["n"]:
+            cursor = await self.db.execute(
+                "SELECT measured_at FROM bp_readings WHERE user_id = ? AND measured_at >= ?",
+                (user_id, cutoff),
+            )
+            days_with = {
+                parse_iso(r["measured_at"]).astimezone(MSK).date()
+                for r in await cursor.fetchall()
+            }
+            result["active_days"] = len(days_with)
+        else:
+            result["active_days"] = 0
+            result["last_at"] = None
+        return result
+
+    async def pill_stats(self, user_id: int, days: int) -> dict:
+        cutoff = (now_msk() - timedelta(days=days)).strftime("%Y-%m-%d")
+        cursor = await self.db.execute(
+            """
+            SELECT status, COUNT(*) AS n FROM pill_logs
+            WHERE user_id = ? AND scheduled_date >= ? AND status IN ('taken', 'skipped')
+            GROUP BY status
+            """,
+            (user_id, cutoff),
+        )
+        result = {"taken": 0, "skipped": 0}
+        for row in await cursor.fetchall():
+            result[row["status"]] = int(row["n"])
+        return result
+
+    async def last_bp_at(self, user_id: int) -> str | None:
+        cursor = await self.db.execute(
+            "SELECT MAX(measured_at) AS last_at FROM bp_readings WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return row["last_at"] if row else None
+
+    async def bot_birthday(self) -> str | None:
+        cursor = await self.db.execute("SELECT MIN(created_at) AS first_at FROM users")
+        row = await cursor.fetchone()
+        return row["first_at"] if row else None
+
+    async def total_readings(self) -> int:
+        cursor = await self.db.execute("SELECT COUNT(*) AS n FROM bp_readings")
+        row = await cursor.fetchone()
+        return int(row["n"]) if row else 0
+
+    async def bp_streak_days(self, user_id: int) -> int:
+        """Сколько дней подряд (включая сегодня) у пользователя есть замеры."""
+        cursor = await self.db.execute(
+            "SELECT measured_at FROM bp_readings WHERE user_id = ?",
+            (user_id,),
+        )
+        days = {
+            parse_iso(r["measured_at"]).astimezone(MSK).date()
+            for r in await cursor.fetchall()
+        }
+        streak = 0
+        day = now_msk().date()
+        while day in days:
+            streak += 1
+            day -= timedelta(days=1)
+        return streak
 
 
 db = Database(settings.db_path)

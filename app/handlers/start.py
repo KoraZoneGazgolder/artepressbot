@@ -1,7 +1,8 @@
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, Message
 
 from app.db import db, fmt_dt, fmt_time, now_msk
 from app.filters import ApprovedUser
@@ -11,13 +12,20 @@ from app.keyboards import (
     BTN_LIST,
     BTN_MEDS,
     BTN_TODAY,
+    OnboardCb,
     access_keyboard,
     keyboard_for,
     main_keyboard,
+    skip_keyboard,
 )
 from app import texts
 
 router = Router()
+
+
+class Onboarding(StatesGroup):
+    intro = State()
+    referral = State()
 
 
 def _who(message: Message) -> tuple[int, str | None, str]:
@@ -52,23 +60,73 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         await message.answer(texts.DENIED, reply_markup=keyboard_for(user))
         return
 
-    if user.get("just_created") or user.get("reopened_request"):
-        mention = f"@{username}" if username else full_name
-        text = (
-            f"Новая заявка в дневник.\n"
-            f"{mention}\n"
-            f"id: <code>{telegram_id}</code>"
-        )
-        for admin in await db.list_admins():
-            try:
-                await message.bot.send_message(
-                    admin["telegram_id"],
-                    text,
-                    reply_markup=access_keyboard(telegram_id),
-                )
-            except Exception:
-                continue
+    if user.get("just_created") or user.get("reopened_request") or not user.get("intro"):
+        await state.set_state(Onboarding.intro)
+        await message.answer(texts.ONBOARD_INTRO)
+        return
     await message.answer(texts.PENDING, reply_markup=keyboard_for(user))
+
+
+@router.message(Onboarding.intro)
+async def onboarding_intro(message: Message, state: FSMContext) -> None:
+    if not message.text or not message.text.strip():
+        await message.answer("Ответьте, пожалуйста, текстом — парой слов достаточно.")
+        return
+    await state.update_data(intro=message.text.strip())
+    await state.set_state(Onboarding.referral)
+    await message.answer(texts.ONBOARD_REFERRAL, reply_markup=skip_keyboard())
+
+
+@router.message(Onboarding.referral)
+async def onboarding_referral(message: Message, state: FSMContext) -> None:
+    if not message.text or not message.text.strip():
+        await message.answer(
+            "Ответьте текстом или нажмите «Пропустить».",
+            reply_markup=skip_keyboard(),
+        )
+        return
+    await _finish_onboarding(message, state, referral=message.text.strip())
+
+
+@router.callback_query(OnboardCb.filter(F.action == "skip"), Onboarding.referral)
+async def onboarding_skip(
+    query: CallbackQuery, state: FSMContext
+) -> None:
+    await query.answer()
+    if isinstance(query.message, Message):
+        await _finish_onboarding(query.message, state, referral=None)
+
+
+async def _finish_onboarding(
+    message: Message, state: FSMContext, referral: str | None
+) -> None:
+    data = await state.get_data()
+    await state.clear()
+    if not message.from_user:
+        return
+    intro = (data.get("intro") or "").strip()
+    user = await db.set_onboarding(message.from_user.id, intro, referral)
+
+    mention = (
+        f"@{message.from_user.username}"
+        if message.from_user.username
+        else message.from_user.full_name
+    )
+    lines = [f"Новая заявка в дневник.\n{mention}", f"id: <code>{message.from_user.id}</code>"]
+    if intro:
+        lines.append(f"Кто: {intro}")
+    if referral:
+        lines.append(f"Откуда узнал(а): {referral}")
+    for admin in await db.list_admins():
+        try:
+            await message.bot.send_message(
+                admin["telegram_id"],
+                "\n".join(lines),
+                reply_markup=access_keyboard(message.from_user.id),
+            )
+        except Exception:
+            continue
+    await message.answer(texts.ONBOARD_DONE, reply_markup=keyboard_for(user))
 
 
 @router.message(Command("help"))

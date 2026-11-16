@@ -3,9 +3,10 @@ import logging
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from app import texts
+from app import fun, texts
 from app.config import settings
 from app.db import (
+    MSK,
     db,
     due_within,
     iso,
@@ -51,10 +52,17 @@ async def _maybe_bp_reminder(
     if await db.was_reminder_sent(user["id"], kind, hhmm, day):
         return
     when = "утреннее" if slot == "morning" else "вечернее"
-    text = (
-        f"Пора записать {when} давление.\n"
-        f"{texts.BP_HOW}"
-    )
+    greeting = fun.seasonal_greeting(now)
+    if greeting is None:
+        birthday = await db.bot_birthday()
+        greeting = fun.birthday_greeting(
+            bool(birthday)
+            and parse_iso(birthday).astimezone(MSK).strftime("%m-%d") == now.strftime("%m-%d")
+            and parse_iso(birthday).astimezone(MSK).date() != now.date()
+        )
+    text = f"Пора записать {when} давление.\n{texts.BP_HOW}"
+    if greeting:
+        text = f"{greeting}\n\n{text}"
     try:
         await bot.send_message(user["telegram_id"], text)
     except Exception:

@@ -2,7 +2,7 @@ from aiogram import Router
 from aiogram.types import CallbackQuery, Message
 
 from app.db import db
-from app import texts
+from app import fun, texts
 
 router = Router()
 
@@ -20,6 +20,9 @@ async def fallback(message: Message) -> None:
         return
     if user["status"] == "denied":
         await message.answer(texts.DENIED)
+        return
+    if message.text and fun.is_thanks(message.text):
+        await message.answer(fun.thanks_reply())
         return
     await message.answer(f"Не понял.\n{texts.BP_HOW}\nИли нажмите Список / Справка.")
 

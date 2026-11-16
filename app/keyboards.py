@@ -26,6 +26,15 @@ class SettingsCb(CallbackData, prefix="bpset"):
     action: str
 
 
+class OnboardCb(CallbackData, prefix="onb"):
+    action: str
+
+
+class FeedbackCb(CallbackData, prefix="fb"):
+    action: str
+    feedback_id: int
+
+
 BTN_TODAY = "Сегодня"
 BTN_LIST = "Список"
 BTN_MEDS = "Таблетки"
@@ -119,6 +128,21 @@ def meds_manage_keyboard(meds: list[dict]) -> InlineKeyboardMarkup:
             callback_data=MedCb(action="delete", med_id=med["id"]),
         )
     builder.adjust(3)
+    return builder.as_markup()
+
+
+def skip_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Пропустить", callback_data=OnboardCb(action="skip"))
+    return builder.as_markup()
+
+
+def feedback_reply_keyboard(feedback_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Ответить",
+        callback_data=FeedbackCb(action="reply", feedback_id=feedback_id),
+    )
     return builder.as_markup()
 
 

@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     snooze_minutes: int = 20
     bp_morning: str = "09:00"
     bp_evening: str = "20:00"
+    backup_dir: str = "/app/data/backups"
+    backup_keep: int = 14
+    backup_time: str = "03:30"
 
     @field_validator("admin_telegram_id", mode="before")
     @classmethod

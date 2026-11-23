@@ -4,6 +4,7 @@ from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app import fun, texts
+from app.backup import backup_db
 from app.config import settings
 from app.db import (
     MSK,
@@ -25,6 +26,8 @@ scheduler = AsyncIOScheduler(timezone=settings.tz)
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(tick, "interval", seconds=30, args=[bot], max_instances=1)
+    hour, minute = settings.backup_time.split(":")
+    scheduler.add_job(backup_db, "cron", hour=int(hour), minute=int(minute))
     return scheduler
 
 

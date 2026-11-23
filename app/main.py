@@ -8,6 +8,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, BotCommandScopeDefault
 
+from app.backup import backup_db
 from app.config import settings
 from app.db import db
 from app.handlers import admin, common, feedback, meds, pressure, settings as settings_handlers, start
@@ -25,6 +26,10 @@ async def main() -> None:
     if not settings.bot_token or settings.bot_token.startswith("000000"):
         raise SystemExit("Укажите BOT_TOKEN в файле .env")
     await db.connect()
+    try:
+        await backup_db()
+    except Exception:
+        log.exception("Startup DB backup failed")
     bot = Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),

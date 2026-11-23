@@ -1,3 +1,5 @@
+from html import escape
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -34,11 +36,11 @@ async def feedback_written(message: Message, db_user: dict, state: FSMContext) -
     await state.clear()
     feedback_id = await db.add_feedback(db_user["id"], message.text)
 
-    name = db_user.get("full_name") or "без имени"
-    username = f" @{db_user['username']}" if db_user.get("username") else ""
+    name = escape(db_user.get("full_name") or "без имени")
+    username = f" @{escape(db_user['username'])}" if db_user.get("username") else ""
     text = (
         f"Обратная связь от {name}{username}:\n\n"
-        f"{message.text.strip()}"
+        f"{escape(message.text.strip())}"
     )
     for admin in await db.list_admins():
         try:
@@ -64,10 +66,10 @@ async def feedback_reply_start(
     await state.update_data(feedback_id=callback_data.feedback_id)
     await query.answer()
     if query.message:
-        name = entry.get("full_name") or "без имени"
+        name = escape(entry.get("full_name") or "без имени")
         await query.message.answer(
             f"Отвечаем {name} на сообщение от {fmt_dt(entry['created_at'])}:\n"
-            f"«{entry['message']}»\n\n"
+            f"«{escape(entry['message'])}»\n\n"
             f"Напишите ответ одним сообщением. Отмена — /cancel."
         )
 
@@ -87,9 +89,9 @@ async def feedback_reply_written(message: Message, db_user: dict, state: FSMCont
     try:
         await message.bot.send_message(
             entry["telegram_id"],
-            f"{texts.FEEDBACK_REPLY_PREFIX}{message.text.strip()}",
+            f"{texts.FEEDBACK_REPLY_PREFIX}{escape(message.text.strip())}",
         )
     except Exception:
         await message.answer("Не удалось доставить ответ — пользователь недоступен.")
         return
-    await message.answer(f"Ответ отправлен ({entry.get('full_name') or 'без имени'}).")
+    await message.answer(f"Ответ отправлен ({escape(entry.get('full_name') or 'без имени')}).")

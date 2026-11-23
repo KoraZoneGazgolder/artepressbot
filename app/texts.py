@@ -89,6 +89,9 @@ ACCESS_OPENED = (
 
 
 def med_title(med: dict) -> str:
+    from html import escape
+
     dose = (med.get("dosage") or "").strip()
     name = med.get("name") or med.get("med_name") or "таблетка"
-    return f"{name}, {dose}" if dose else name
+    name = escape(name)
+    return f"{name}, {escape(dose)}" if dose else name

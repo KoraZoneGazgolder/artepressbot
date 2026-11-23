@@ -105,12 +105,7 @@ async def _maybe_pill_reminders(bot: Bot, user: dict, now, day: str) -> None:
             except Exception:
                 log.exception("Pill reminder failed for %s", user["telegram_id"])
                 continue
-            await db.update_pill_log(
-                log_row["id"],
-                status="pending",
-                reminded_at=iso(now_utc()),
-                snooze_until=None,
-            )
+            await db.mark_pill_reminded(log_row["id"], iso(now_utc()))
 
 
 def _added_after_todays_slot(med: dict, hhmm: str, now) -> bool:

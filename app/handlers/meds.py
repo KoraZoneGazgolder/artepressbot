@@ -133,13 +133,15 @@ async def med_actions(
         return
 
     if callback_data.action == "dose":
+        from html import escape
+
         await state.set_state(EditDose.value)
         await state.update_data(med_id=med["id"])
         current = (med.get("dosage") or "").strip() or "не указана"
         await query.answer()
         if query.message:
             await query.message.answer(
-                f"Новая дозировка для {med['name']} (сейчас: {current}):"
+                f"Новая дозировка для {escape(med['name'])} (сейчас: {escape(current)}):"
             )
         return
 

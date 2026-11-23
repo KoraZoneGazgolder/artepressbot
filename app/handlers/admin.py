@@ -1,3 +1,5 @@
+from html import escape
+
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
@@ -11,8 +13,8 @@ router = Router()
 
 
 def _label(user: dict) -> str:
-    name = user.get("full_name") or "без имени"
-    username = f" @{user['username']}" if user.get("username") else ""
+    name = escape(user.get("full_name") or "без имени")
+    username = f" @{escape(user['username'])}" if user.get("username") else ""
     return f"{name}{username} ({user['telegram_id']}) — {user['status']}"
 
 
@@ -35,9 +37,9 @@ async def cmd_pending(message: Message) -> None:
     for user in pending:
         lines = [f"Заявка: {_label(user)}"]
         if user.get("intro"):
-            lines.append(f"Кто: {user['intro']}")
+            lines.append(f"Кто: {escape(user['intro'])}")
         if user.get("referral_source"):
-            lines.append(f"Откуда узнал(а): {user['referral_source']}")
+            lines.append(f"Откуда узнал(а): {escape(user['referral_source'])}")
         await message.answer(
             "\n".join(lines),
             reply_markup=access_keyboard(user["telegram_id"]),
@@ -65,7 +67,7 @@ async def cmd_stats(message: Message) -> None:
     if not approved:
         lines.append("Одобренных пользователей пока нет.")
     for user in approved:
-        name = user.get("full_name") or "без имени"
+        name = escape(user.get("full_name") or "без имени")
         lines.append(f"—— {name} ——")
 
         stats30 = await db.bp_stats(user["id"], 30)
@@ -135,11 +137,11 @@ async def access_decision(query: CallbackQuery, callback_data: AccessCb) -> None
         return
 
     if callback_data.action == "approve":
-        note = f"Одобрил {user.get('full_name') or callback_data.telegram_id}"
+        note = f"Одобрил {escape(user.get('full_name') or str(callback_data.telegram_id))}"
         user_text = texts.ACCESS_OPENED
         user_kb = main_keyboard()
     else:
-        note = f"Отклонил {user.get('full_name') or callback_data.telegram_id}"
+        note = f"Отклонил {escape(user.get('full_name') or str(callback_data.telegram_id))}"
         user_text = "Доступ отклонён."
         user_kb = keyboard_for(user)
 

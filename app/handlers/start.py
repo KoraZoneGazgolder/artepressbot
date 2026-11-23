@@ -100,6 +100,8 @@ async def onboarding_skip(
 async def _finish_onboarding(
     message: Message, state: FSMContext, referral: str | None
 ) -> None:
+    from html import escape
+
     data = await state.get_data()
     await state.clear()
     if not message.from_user:
@@ -108,15 +110,15 @@ async def _finish_onboarding(
     user = await db.set_onboarding(message.from_user.id, intro, referral)
 
     mention = (
-        f"@{message.from_user.username}"
+        f"@{escape(message.from_user.username)}"
         if message.from_user.username
-        else message.from_user.full_name
+        else escape(message.from_user.full_name)
     )
     lines = [f"Новая заявка в дневник.\n{mention}", f"id: <code>{message.from_user.id}</code>"]
     if intro:
-        lines.append(f"Кто: {intro}")
+        lines.append(f"Кто: {escape(intro)}")
     if referral:
-        lines.append(f"Откуда узнал(а): {referral}")
+        lines.append(f"Откуда узнал(а): {escape(referral)}")
     for admin in await db.list_admins():
         try:
             await message.bot.send_message(

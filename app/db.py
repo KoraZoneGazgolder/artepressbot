@@ -521,6 +521,19 @@ class Database:
         )
         await self.db.commit()
 
+    async def mark_pill_reminded(self, log_id: int, reminded_at: str) -> bool:
+        """Отметить напоминание отправленным, только если пользователь ещё не решил."""
+        cursor = await self.db.execute(
+            """
+            UPDATE pill_logs
+            SET status = 'pending', reminded_at = ?, snooze_until = NULL
+            WHERE id = ? AND status IN ('pending', 'snoozed')
+            """,
+            (reminded_at, log_id),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
     async def pill_logs_for_date(self, user_id: int, day: str) -> list[dict]:
         cursor = await self.db.execute(
             """

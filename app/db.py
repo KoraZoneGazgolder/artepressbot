@@ -395,16 +395,17 @@ class Database:
         return int(row["n"]) if row else 0
 
     async def bp_for_date(self, user_id: int, day: str) -> list[dict]:
+        start = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=MSK)
+        end = start + timedelta(days=1)
         cursor = await self.db.execute(
-            "SELECT * FROM bp_readings WHERE user_id = ? ORDER BY measured_at",
-            (user_id,),
+            """
+            SELECT * FROM bp_readings
+            WHERE user_id = ? AND measured_at >= ? AND measured_at < ?
+            ORDER BY measured_at
+            """,
+            (user_id, iso(start), iso(end)),
         )
-        rows = [dict(r) for r in await cursor.fetchall()]
-        return [
-            r
-            for r in rows
-            if parse_iso(r["measured_at"]).astimezone(MSK).strftime("%Y-%m-%d") == day
-        ]
+        return [dict(r) for r in await cursor.fetchall()]
 
     async def add_med(
         self, user_id: int, name: str, times: list[str], dosage: str = ""
@@ -698,20 +699,26 @@ class Database:
         return int(row["n"]) if row else 0
 
     async def bp_streak_days(self, user_id: int) -> int:
-        """Сколько дней подряд (включая сегодня) у пользователя есть замеры."""
+        """Сколько дней подряд (включая сегодня) у пользователя есть замеры.
+
+        Читает записи от новых к старым и останавливается на первом пропуске.
+        """
         cursor = await self.db.execute(
-            "SELECT measured_at FROM bp_readings WHERE user_id = ?",
+            "SELECT measured_at FROM bp_readings WHERE user_id = ? ORDER BY measured_at DESC",
             (user_id,),
         )
-        days = {
-            parse_iso(r["measured_at"]).astimezone(MSK).date()
-            for r in await cursor.fetchall()
-        }
         streak = 0
-        day = now_msk().date()
-        while day in days:
+        expected = now_msk().date()
+        seen: set = set()
+        async for row in cursor:
+            day = parse_iso(row["measured_at"]).astimezone(MSK).date()
+            if day in seen:
+                continue
+            if day != expected:
+                break
+            seen.add(day)
             streak += 1
-            day -= timedelta(days=1)
+            expected -= timedelta(days=1)
         return streak
 
 

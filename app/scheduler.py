@@ -1,6 +1,7 @@
 import logging
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramForbiddenError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app import fun, texts
@@ -36,23 +37,39 @@ async def tick(bot: Bot) -> None:
     day = now.strftime("%Y-%m-%d")
     users = await db.list_approved()
     for user in users:
+        if user.get("bot_blocked"):
+            continue
         if user_bp_reminders_on(user):
+            sent = await db.reminder_kinds_for_date(user["id"], day)
             await _maybe_bp_reminder(
-                bot, user, now, day, "morning", user_bp_morning(user)
+                bot, user, now, day, "morning", user_bp_morning(user), sent
             )
             await _maybe_bp_reminder(
-                bot, user, now, day, "evening", user_bp_evening(user)
+                bot, user, now, day, "evening", user_bp_evening(user), sent
             )
         await _maybe_pill_reminders(bot, user, now, day)
 
 
+async def _send(bot: Bot, user: dict, text: str, **kwargs) -> bool:
+    try:
+        await bot.send_message(user["telegram_id"], text, **kwargs)
+        return True
+    except TelegramForbiddenError:
+        log.warning("Bot blocked by %s, notifications disabled", user["telegram_id"])
+        await db.set_bot_blocked(user["id"], True)
+        return False
+    except Exception:
+        log.exception("Send failed for %s", user["telegram_id"])
+        return False
+
+
 async def _maybe_bp_reminder(
-    bot: Bot, user: dict, now, day: str, slot: str, hhmm: str
+    bot: Bot, user: dict, now, day: str, slot: str, hhmm: str, sent: set
 ) -> None:
     if not due_within(hhmm, now, window_hours=2):
         return
     kind = f"bp_{slot}"
-    if await db.was_reminder_sent(user["id"], kind, hhmm, day):
+    if (kind, hhmm) in sent:
         return
     when = "утреннее" if slot == "morning" else "вечернее"
     greeting = fun.seasonal_greeting(now)
@@ -66,21 +83,24 @@ async def _maybe_bp_reminder(
     text = f"Пора записать {when} давление.\n{texts.BP_HOW}"
     if greeting:
         text = f"{greeting}\n\n{text}"
-    try:
-        await bot.send_message(user["telegram_id"], text)
-    except Exception:
-        log.exception("BP reminder failed for %s", user["telegram_id"])
+    if not await _send(bot, user, text):
         return
     await db.mark_reminder_sent(user["id"], kind, hhmm, day)
 
 
 async def _maybe_pill_reminders(bot: Bot, user: dict, now, day: str) -> None:
     meds = await db.list_meds(user["id"])
+    if not meds:
+        return
+    rows = await db.pill_logs_for_date(user["id"], day)
+    log_map = {(row["medication_id"], row["scheduled_time"]): row for row in rows}
     for med in meds:
         for hhmm in med["times"]:
             if _added_after_todays_slot(med, hhmm, now):
                 continue
-            log_row = await db.get_or_create_pill_log(user["id"], med["id"], day, hhmm)
+            log_row = log_map.get((med["id"], hhmm))
+            if log_row is None:
+                log_row = await db.get_or_create_pill_log(user["id"], med["id"], day, hhmm)
             if log_row["status"] in {"taken", "skipped"}:
                 continue
 
@@ -99,14 +119,7 @@ async def _maybe_pill_reminders(bot: Bot, user: dict, now, day: str) -> None:
                 f"Пора выпить: <b>{texts.med_title(med)}</b>\n"
                 f"Время по расписанию: {hhmm}"
             )
-            try:
-                await bot.send_message(
-                    user["telegram_id"],
-                    text,
-                    reply_markup=pill_keyboard(log_row["id"]),
-                )
-            except Exception:
-                log.exception("Pill reminder failed for %s", user["telegram_id"])
+            if not await _send(bot, user, text, reply_markup=pill_keyboard(log_row["id"])):
                 continue
             await db.mark_pill_reminded(log_row["id"], iso(now_utc()))
 

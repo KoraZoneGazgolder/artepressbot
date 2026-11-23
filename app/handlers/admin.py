@@ -130,6 +130,13 @@ async def cmd_konami(message: Message) -> None:
 
 @router.callback_query(AccessCb.filter(), AdminUser())
 async def access_decision(query: CallbackQuery, callback_data: AccessCb) -> None:
+    current = await db.get_user_by_telegram(callback_data.telegram_id)
+    if current is None:
+        await query.answer("Пользователь не найден", show_alert=True)
+        return
+    if current["status"] != "pending":
+        await query.answer("Заявка уже обработана", show_alert=True)
+        return
     status = "approved" if callback_data.action == "approve" else "denied"
     user = await db.set_access(callback_data.telegram_id, status)
     if user is None:

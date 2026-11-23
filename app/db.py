@@ -210,6 +210,9 @@ class Database:
         )
         await self._add_column_if_missing("users", "intro", "TEXT")
         await self._add_column_if_missing("users", "referral_source", "TEXT")
+        await self._add_column_if_missing(
+            "users", "bot_blocked", "INTEGER NOT NULL DEFAULT 0"
+        )
 
     async def _add_column_if_missing(self, table: str, name: str, decl: str) -> None:
         cursor = await self.db.execute(f"PRAGMA table_info({table})")
@@ -254,7 +257,7 @@ class Database:
         await self.db.execute(
             """
             UPDATE users
-            SET username = ?, full_name = ?, updated_at = ?,
+            SET username = ?, full_name = ?, updated_at = ?, bot_blocked = 0,
                 status = CASE
                     WHEN ? = 1 THEN 'approved'
                     WHEN status = 'denied' THEN 'pending'
@@ -584,6 +587,21 @@ class Database:
             (user_id, kind, slot, day),
         )
         return await cursor.fetchone() is not None
+
+    async def reminder_kinds_for_date(self, user_id: int, day: str) -> set[tuple[str, str]]:
+        """Все отправленные сегодня напоминания пользователя одним запросом."""
+        cursor = await self.db.execute(
+            "SELECT kind, slot FROM reminder_sends WHERE user_id = ? AND sent_date = ?",
+            (user_id, day),
+        )
+        return {(row["kind"], row["slot"]) for row in await cursor.fetchall()}
+
+    async def set_bot_blocked(self, user_id: int, blocked: bool) -> None:
+        await self.db.execute(
+            "UPDATE users SET bot_blocked = ?, updated_at = ? WHERE id = ?",
+            (1 if blocked else 0, iso(now_utc()), user_id),
+        )
+        await self.db.commit()
 
     # --- обратная связь ---
 

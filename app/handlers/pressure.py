@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from aiogram import F, Router
 from aiogram.filters import BaseFilter, Command, StateFilter
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
@@ -29,7 +31,8 @@ class LooksLikeBp(BaseFilter):
         text = (message.text or "").strip()
         if not text or parse_bp(text) is not None:
             return False
-        return "/" in text and any(ch.isdigit() for ch in text)
+        # два-три числа через любой из разделителей — похоже на давление, но не полный формат
+        return bool(re.search(r"\d{2,3}\s*[/\\.,;\-:]\s*\d{2,3}", text))
 
 
 def format_bp_page(rows: list[dict], total: int, offset: int) -> str:
@@ -120,12 +123,14 @@ async def save_pressure(
     message: Message, db_user: dict, systolic: int, diastolic: int, pulse: int
 ) -> None:
     row = await db.add_bp(db_user["id"], systolic, diastolic, pulse)
+    count = await db.count_bp(db_user["id"])
     lines = [
         f"Записал: {systolic}/{diastolic}, пульс {pulse}",
         f"{fmt_dt(row['measured_at'])}",
     ]
+    achievement = fun.achievement_message(count)
     note = fun.milestone_message(
-        await db.count_bp(db_user["id"]),
+        count,
         await db.bp_streak_days(db_user["id"]),
         systolic,
         diastolic,
@@ -133,6 +138,11 @@ async def save_pressure(
     if note:
         lines.append(f"\n{note}")
     await message.answer("\n".join(lines), reply_markup=main_keyboard())
+    if achievement:
+        try:
+            await message.answer_animation(fun.cat_gif_url(), caption=achievement)
+        except Exception:
+            await message.answer(achievement)
 
 
 @router.message(StateFilter(None), ApprovedUser(), LooksLikeBp())

@@ -32,12 +32,10 @@ def milestone_message(count: int, streak: int, systolic: int, diastolic: int) ->
     """Тёплая заметка к сохранённому замеру. Показываем не чаще одной за раз."""
     if count == 1:
         return "Первая запись в дневнике — с чистого листа. Так держать!"
-    if count == 10:
-        return "Десятая запись! Дневник потихоньку наполняется."
-    if count == 50:
-        return "Пятьдесят замеров! Вы следите за собой очень старательно."
+    if count % 10 == 0 and count <= 100:
+        return None  # круглые десятки отмечаем ачивкой с котиком
     if count % 100 == 0:
-        return f"Уже {count} замеров! Вашему тонометру есть что вспомнить."
+        return None  # сотни — тоже ачивка
     if streak == 7:
         return "Семь дней подряд с замерами — отличная привычка!"
     if streak == 14:
@@ -48,6 +46,46 @@ def milestone_message(count: int, streak: int, systolic: int, diastolic: int) ->
         return f"{streak} дней подряд с замерами — просто образцово!"
     if systolic == 120 and diastolic == 80:
         return "Ровно 120/80 — давление как в учебнике. Так держать!"
+    return None
+
+
+ACHIEVEMENTS: dict[int, str] = {
+    10: "10 замеров! Дневник наполняется — вы молодец!",
+    20: "20 замеров! Два десятка заботы о себе. Так держать!",
+    30: "30 замеров! Уже целая история наблюдений. Отличная работа!",
+    40: "40 замеров! Сороковая отметка — приятно смотреть на ваши успехи!",
+    50: "50 замеров! Полсотни! Вы следите за собой очень старательно.",
+    60: "60 замеров! Шесть десятков записей — пример для всей семьи!",
+    70: "70 замеров! Семьдесят — красивое число и красивая привычка!",
+    80: "80 замеров! Восемьдесят раз вы не забыли о себе. Браво!",
+    90: "90 замеров! До сотни рукой подать — так держать!",
+    100: "100 замеров! Сотня! Вы это сделали — настоящий рекорд дневника!",
+}
+
+ACHIEVEMENT_BIG = (
+    "{count} замеров! Ещё одна сотня позади — ваша регулярность восхищает!"
+)
+
+# Гифки с котиками-грамотниками (проверенные ссылки GIPHY)
+CAT_GIFS = [
+    "https://media.giphy.com/media/JIX9t2j0ZTN9S/giphy.gif",      # кот за ноутбуком
+    "https://media.giphy.com/media/MDJ9IbxxvDUQM/giphy.gif",      # котёнок тянется лапками
+    "https://media.giphy.com/media/3oriO0OEd9QIDdllqo/giphy.gif", # пушистый котёнок
+    "https://media.giphy.com/media/12HZukMBlutpoQ/giphy.gif",     # кот-селфи с лапой
+    "https://media.giphy.com/media/mlvseq9yvZhba/giphy.gif",      # кот с пилочкой
+]
+
+
+def cat_gif_url() -> str:
+    return random.choice(CAT_GIFS)
+
+
+def achievement_message(count: int) -> str | None:
+    """Ачивка за круглые десятки (10…100) и за каждую следующую сотню."""
+    if count in ACHIEVEMENTS:
+        return ACHIEVEMENTS[count]
+    if count > 100 and count % 100 == 0:
+        return ACHIEVEMENT_BIG.format(count=count)
     return None
 
 

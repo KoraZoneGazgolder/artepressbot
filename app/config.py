@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     backup_dir: str = "/app/data/backups"
     backup_keep: int = 14
     backup_time: str = "03:30"
+    bp_inactive_days: int = 3
 
     @field_validator("admin_telegram_id", mode="before")
     @classmethod

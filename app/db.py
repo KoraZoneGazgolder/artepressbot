@@ -605,6 +605,25 @@ class Database:
         )
         await self.db.commit()
 
+    async def last_reminder_sent(self, user_id: int, kind: str) -> str | None:
+        """Дата (YYYY-MM-DD) последней отправки напоминания данного вида."""
+        cursor = await self.db.execute(
+            "SELECT MAX(sent_date) AS d FROM reminder_sends WHERE user_id = ? AND kind = ?",
+            (user_id, kind),
+        )
+        row = await cursor.fetchone()
+        return row["d"] if row else None
+
+    async def table_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for table in (
+            "users", "bp_readings", "medications", "pill_logs", "reminder_sends", "feedback",
+        ):
+            cursor = await self.db.execute(f"SELECT COUNT(*) AS n FROM {table}")
+            row = await cursor.fetchone()
+            counts[table] = int(row["n"]) if row else 0
+        return counts
+
     # --- обратная связь ---
 
     async def add_feedback(self, user_id: int, message: str) -> int:

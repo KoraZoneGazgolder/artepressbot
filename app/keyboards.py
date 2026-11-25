@@ -35,6 +35,10 @@ class FeedbackCb(CallbackData, prefix="fb"):
     feedback_id: int
 
 
+class BroadcastCb(CallbackData, prefix="bcast"):
+    action: str
+
+
 BTN_TODAY = "Сегодня"
 BTN_LIST = "Список"
 BTN_MEDS = "Таблетки"
@@ -143,6 +147,14 @@ def feedback_reply_keyboard(feedback_id: int) -> InlineKeyboardMarkup:
         text="Ответить",
         callback_data=FeedbackCb(action="reply", feedback_id=feedback_id),
     )
+    return builder.as_markup()
+
+
+def broadcast_confirm_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Отправить всем", callback_data=BroadcastCb(action="send"))
+    builder.button(text="Отмена", callback_data=BroadcastCb(action="cancel"))
+    builder.adjust(2)
     return builder.as_markup()
 
 

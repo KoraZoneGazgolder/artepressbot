@@ -1,13 +1,26 @@
+import os
 from html import escape
+from pathlib import Path
 
-from aiogram import Router
+from aiogram import F, Router
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from app import fun, texts
+from app.config import settings
 from app.db import db, fmt_dt, fmt_day
 from app.filters import AdminUser
-from app.keyboards import AccessCb, access_keyboard, keyboard_for, main_keyboard
+from app.keyboards import (
+    AccessCb,
+    BroadcastCb,
+    access_keyboard,
+    broadcast_confirm_keyboard,
+    keyboard_for,
+    main_keyboard,
+)
 
 router = Router()
 
@@ -161,3 +174,111 @@ async def access_decision(query: CallbackQuery, callback_data: AccessCb) -> None
         )
     except Exception:
         pass
+
+
+@router.message(Command("dbstats"), AdminUser())
+async def cmd_dbstats(message: Message) -> None:
+    counts = await db.table_counts()
+    size_kb = os.path.getsize(settings.db_path) / 1024
+    backups = sorted(Path(settings.backup_dir).glob("diary-*.db"))
+
+    lines = [
+        "База дневника",
+        f"Файл: {size_kb:.0f} КБ; бэкапов: {len(backups)}"
+        + (f", последний {backups[-1].name}" if backups else ""),
+        "",
+        "Таблицы:",
+        *[f"• {table}: {n}" for table, n in counts.items()],
+    ]
+
+    for user in await db.list_approved():
+        name = escape(user.get("full_name") or "без имени")
+        last = await db.last_bp_at(user["id"])
+        total = await db.count_bp(user["id"])
+        meds = await db.list_meds(user["id"])
+        pills = await db.pill_stats(user["id"], 7)
+        lines.append("")
+        lines.append(f"—— {name} ——")
+        lines.append(
+            f"Замеров всего: {total}; последний: {fmt_dt(last) if last else 'нет'}"
+        )
+        lines.append(
+            f"Препаратов: {len(meds)}; за 7 дней: выпил {pills['taken']}, "
+            f"пропуск {pills['skipped']}"
+        )
+        if user.get("bot_blocked"):
+            lines.append("⚠️ заблокировал бота")
+
+    await message.answer("\n".join(lines))
+
+
+class BroadcastForm(StatesGroup):
+    text = State()
+    confirm = State()
+
+
+@router.message(Command("broadcast"), AdminUser())
+async def cmd_broadcast(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(BroadcastForm.text)
+    await message.answer(
+        "Текст новости для семьи одним сообщением (можно с HTML-разметкой). "
+        "Отмена — /cancel."
+    )
+
+
+@router.message(BroadcastForm.text, AdminUser())
+async def broadcast_text(message: Message, state: FSMContext) -> None:
+    if not message.text or not message.text.strip():
+        await message.answer("Нужен текст. Отмена — /cancel.")
+        return
+    news = message.text.strip()
+    try:
+        await message.answer(news)
+    except Exception:
+        await message.answer(
+            "Разметка сломалась (проверьте HTML-теги). Пришлите текст ещё раз. "
+            "Отмена — /cancel."
+        )
+        return
+    await state.update_data(text=news)
+    await state.set_state(BroadcastForm.confirm)
+    await message.answer(
+        "Так новость будет выглядеть. Отправляем всей семье?",
+        reply_markup=broadcast_confirm_keyboard(),
+    )
+
+
+@router.callback_query(BroadcastCb.filter(F.action == "cancel"), BroadcastForm.confirm, AdminUser())
+async def broadcast_cancel(query: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await query.answer("Отменил")
+    if query.message:
+        await query.message.edit_text("Рассылка отменена.")
+
+
+@router.callback_query(BroadcastCb.filter(F.action == "send"), BroadcastForm.confirm, AdminUser())
+async def broadcast_send(query: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    await state.clear()
+    news = (data.get("text") or "").strip()
+    if not news:
+        await query.answer("Текст потерялся. Начните /broadcast заново.", show_alert=True)
+        return
+    sent = blocked = failed = 0
+    for user in await db.list_approved():
+        try:
+            await query.bot.send_message(user["telegram_id"], news)
+            sent += 1
+        except TelegramForbiddenError:
+            await db.set_bot_blocked(user["id"], True)
+            blocked += 1
+        except Exception:
+            failed += 1
+    await query.answer()
+    report = f"Новость отправлена: {sent}."
+    missed = blocked + failed
+    if missed:
+        report += f" Не дошло: {missed} (из них заблокировали бота: {blocked})."
+    if query.message:
+        await query.message.edit_text(report)

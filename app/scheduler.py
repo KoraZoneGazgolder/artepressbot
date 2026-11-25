@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
@@ -48,6 +49,8 @@ async def tick(bot: Bot) -> None:
                 bot, user, now, day, "evening", user_bp_evening(user), sent
             )
         await _maybe_pill_reminders(bot, user, now, day)
+        if user_bp_reminders_on(user):
+            await _maybe_inactivity_nudge(bot, user, now, day)
 
 
 async def _send(bot: Bot, user: dict, text: str, **kwargs) -> bool:
@@ -122,6 +125,32 @@ async def _maybe_pill_reminders(bot: Bot, user: dict, now, day: str) -> None:
             if not await _send(bot, user, text, reply_markup=pill_keyboard(log_row["id"])):
                 continue
             await db.mark_pill_reminded(log_row["id"], iso(now_utc()))
+
+
+NUDGE_HOURS = range(10, 21)
+
+
+async def _maybe_inactivity_nudge(bot: Bot, user: dict, now, day: str) -> None:
+    """Напомнить, если давление не записывали дольше bp_inactive_days дней."""
+    if now.hour not in NUDGE_HOURS:
+        return
+    days = settings.bp_inactive_days
+    last = await db.last_bp_at(user["id"])
+    if last is not None:
+        if now_utc() - parse_iso(last) < timedelta(days=days):
+            return
+    elif now_utc() - parse_iso(user["created_at"]) < timedelta(days=days):
+        return
+    prev = await db.last_reminder_sent(user["id"], "bp_inactive")
+    if prev and (now.date() - datetime.strptime(prev, "%Y-%m-%d").date()).days < days:
+        return
+    text = (
+        f"Уже больше {days} дн. нет записей давления — самое время измерить.\n"
+        f"{texts.BP_HOW}"
+    )
+    if not await _send(bot, user, text):
+        return
+    await db.mark_reminder_sent(user["id"], "bp_inactive", day, day)
 
 
 def _added_after_todays_slot(med: dict, hhmm: str, now) -> bool:
